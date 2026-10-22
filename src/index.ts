@@ -46,7 +46,7 @@ app.get("/health", (c) =>
   c.json({
     ok: true,
     service: "cf-agent-memory",
-    version: "0.3.0",
+    version: "0.3.1",
     time: new Date().toISOString(),
   }),
 );
