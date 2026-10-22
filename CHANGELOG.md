@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2 — 2026-10-22
+
+修复面板标签页：记忆与技能出现在同一页。
+
+- 原因：`main { display: grid }` 覆盖了 `hidden` 属性自带的 `display: none`——作者样式永远胜过 UA 默认样式，于是技能视图一直和记忆视图并排显示，且因为 `loadSkills()` 只在点击标签时触发，技能区在记忆页上永远停在「加载中…」
+- 修复：新增 `[hidden] { display: none !important; }`
+- `test/panel.test.ts` 增加视图切换契约断言（含上述 CSS 优先级陷阱）
+- 本地用无头 Chrome 实测：记忆页只显示记忆、切到技能页只显示技能且正常加载、切回正常；上一个 tags bug 未回归
+
 ## 0.3.1 — 2026-10-22
 
 修复 Web UI 记忆列表报错 `(item.tags || []).map is not a function`。

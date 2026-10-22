@@ -16,6 +16,10 @@
         --danger: #a33a2f;
       }
       * { box-sizing: border-box; }
+      /* `main { display: grid }` below would otherwise beat the UA stylesheet's
+         `[hidden] { display: none }` (author styles always win over UA styles),
+         which made the skills view render alongside the memory view. */
+      [hidden] { display: none !important; }
       body {
         margin: 0;
         background: var(--bg);
