@@ -1,0 +1,6 @@
+# Copy to .dev.vars for local development.
+# On Cloudflare, set it as a Worker secret:
+#   npx wrangler secret put ADMIN_TOKEN
+#
+# Generate a value with: openssl rand -hex 32
+ADMIN_TOKEN=change-me

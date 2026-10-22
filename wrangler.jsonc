@@ -1,0 +1,56 @@
+/**
+ * Cloudflare Worker configuration.
+ *
+ * `database_id` is filled in by `npm run setup` (scripts/setup.mjs).
+ * Until then it holds a placeholder so that a fresh clone fails loudly
+ * instead of silently creating a broken deployment.
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cf-agent-memory",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cf-agent-memory",
+      "database_id": "758733ce-a0ad-435f-bd6c-e75262e7da85"
+    }
+  ],
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "cf-agent-memory"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "USER_MEMORY",
+        "class_name": "UserMemoryDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["UserMemoryDO"]
+    }
+  ],
+  "vars": {
+    "EMBEDDING_MODEL": "@cf/baai/bge-m3",
+    "VECTOR_DIMENSIONS": "1024",
+    "RATE_LIMIT_PER_MINUTE": "120"
+  }
+}
