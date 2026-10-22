@@ -1,6 +1,6 @@
 {
   "name": "cf-agent-memory",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Personal agent memory on Cloudflare's free tier — MCP server with hybrid recall over D1 + Vectorize.",

@@ -47,7 +47,7 @@ function fail(message: string) {
  * never have to think about storage strategy, only about what is worth keeping.
  */
 export function buildMcpServer(env: Env, userId: string): McpServer {
-  const server = new McpServer({ name: "cf-agent-memory", version: "0.2.0" });
+  const server = new McpServer({ name: "cf-agent-memory", version: "0.3.0" });
 
   server.registerTool(
     "memory_remember",

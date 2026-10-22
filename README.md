@@ -37,6 +37,7 @@ Claude Code / Cursor / CodeBuddy / 任何 MCP 客户端
 ## 特性
 
 - **MCP 原生**：12 个工具（记忆 6 + 技能 6），Claude Code、Cursor、CodeBuddy 等直接接入
+- **代理注入**：把 `ANTHROPIC_BASE_URL` 指向本服务，自动把召回的记忆与技能列表插进当前轮次，不依赖模型自觉
 - **混合召回**：语义（Vectorize）+ 关键词（FTS5 + 中文 bigram）+ RRF 融合 + 时间加权，任一路失败自动降级
 - **同键覆盖**：`key='project.database'` 写入新值自动 supersede 旧值，不会积累互相矛盾的记忆
 - **技能库**：SKILL.md 托管 + 版本快照 + R2 资源文件 + 按 agent 分配，同名再导入自动升版本
@@ -103,6 +104,34 @@ npm run dev     # http://localhost:8787
 
 接好之后，让 Agent「记住这个」，它会调用 `memory_remember`；下次新会话问「我们之前定的数据库是什么」，会走 `memory_recall`。
 
+## 代理注入（自动记忆，不依赖模型自觉）
+
+如果你不想依赖模型主动调工具，把客户端指到本服务即可。请求经过时，Worker 会拿**最后一条用户消息**当 query 召回记忆、列出可用技能，插到那一轮之前，再转发给上游。
+
+```bash
+# Claude Code
+export ANTHROPIC_BASE_URL="https://<WORKER_URL>"
+export ANTHROPIC_AUTH_TOKEN="<PROXY_TOKEN>"
+
+# 上游 API key 二选一：
+#   1. 存进 Worker：npx wrangler secret put ANTHROPIC_API_KEY
+#   2. 或客户端自己带 x-api-key（用谁的就扣谁的额度）
+```
+
+三个可观测响应头，调试时很好用：
+
+| 头 | 值 |
+|---|---|
+| `x-cfam-injected` | `1` 本轮注入了，`0` 没有 |
+| `x-cfam-reason` | `injected` / `no_content` / `body_too_large` / `not_injectable` / `injection_failed` |
+| `x-cfam-upstream-ms` | 上游耗时 |
+
+`body_too_large` 是**有意的保护**：免费层每请求只有 10ms CPU，一个带完整历史的 Claude Code 请求体解析+重新序列化就可能超预算。超过 `MAX_PROXY_BODY_BYTES`（默认 512KB）就原样转发，最坏情况就是这轮没有记忆——绝不会因为注入把请求搞失败。
+
+代理路由用独立的 `PROXY_TOKEN`，与 `ADMIN_TOKEN` 分开：它花的是真实 LLM 额度。没配 `PROXY_TOKEN` 时该路由返回 503，其他接口不受影响。
+
+详细设计与代价分析见 [docs/proxy-injection.md](docs/proxy-injection.md)。
+
 ## 工具一览
 
 **记忆**
@@ -161,6 +190,9 @@ query ──┬─► Workers AI embedding ──► Vectorize top-20 ─┐
 - **MCP 是无状态的**：每次请求独立，不维护会话；记忆状态都在 D1 里
 - **单用户模型**：用 `X-User-Id` 区分，但没有多租户 ACL。多人共用请自行加一层网关
 - **中文分词用 bigram**：对短句足够，长文档的召回质量不如专业分词器
+- **代理只支持 Anthropic 兼容协议**：Claude Code / CodeBuddy / WorkBuddy 可直接用；Codex、Cursor 等 OpenAI 协议客户端需要后续适配
+- **代理不做响应侧提取**：对话不会自动写回记忆，仍需模型调 `memory_remember` 或调 `/v1/ingest`
+- **代理能看到 LLM Key**：客户端自带 `x-api-key` 时会经过 Worker；介意的话用 Worker 上存的 `ANTHROPIC_API_KEY`
 
 ## 开发
 

@@ -57,6 +57,11 @@
   "vars": {
     "EMBEDDING_MODEL": "@cf/baai/bge-m3",
     "VECTOR_DIMENSIONS": "1024",
-    "RATE_LIMIT_PER_MINUTE": "120"
+    "RATE_LIMIT_PER_MINUTE": "120",
+    "UPSTREAM_URL": "https://api.anthropic.com",
+    "MAX_PROXY_BODY_BYTES": "524288",
+    "INJECT_MEMORIES": "1",
+    "INJECT_SKILLS": "1",
+    "INJECTION_BUDGET_CHARS": "4000"
   }
 }

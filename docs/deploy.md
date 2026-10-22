@@ -77,6 +77,23 @@ npm run dev
 | `EMBEDDING_MODEL` | `@cf/baai/bge-m3` | 换模型必须同时重建 Vectorize 索引 |
 | `VECTOR_DIMENSIONS` | `1024` | 仅用于文档说明，实际维度由索引决定 |
 | `RATE_LIMIT_PER_MINUTE` | `120` | 每用户每分钟写操作上限 |
+| `UPSTREAM_URL` | `https://api.anthropic.com` | LLM 代理上游地址 |
+| `MAX_PROXY_BODY_BYTES` | `524288` | 超过则跳过注入、原样转发 |
+| `INJECT_MEMORIES` / `INJECT_SKILLS` | `1` | 置 `0` 关闭对应注入 |
+| `INJECTION_BUDGET_CHARS` | `4000` | 注入文本硬上限 |
+
+密钥（用 `wrangler secret put`，不要写进 `wrangler.jsonc`）：
+
+| 密钥 | 用途 |
+|---|---|
+| `ADMIN_TOKEN` | `/v1/*` 与 `/mcp` 的 Bearer token |
+| `PROXY_TOKEN` | LLM 代理路由的 Bearer token；不配则代理路由返回 503 |
+| `ANTHROPIC_API_KEY` | 客户端未自带 `x-api-key` 时使用的上游 key |
+
+```bash
+npx wrangler secret put PROXY_TOKEN
+npx wrangler secret put ANTHROPIC_API_KEY   # 可选
+```
 
 改 `wrangler.jsonc` 的 `vars` 后重新 `npm run deploy`。
 

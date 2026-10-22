@@ -11,9 +11,22 @@ export interface Env {
 
   /** Bearer token required by every /v1 and /mcp request. Set with `wrangler secret put ADMIN_TOKEN`. */
   ADMIN_TOKEN: string;
+  /** Separate token for the LLM proxy route (`/v1/messages`). Unset disables the proxy. */
+  PROXY_TOKEN?: string;
+  /** Upstream key used when the client does not present its own `x-api-key`. */
+  ANTHROPIC_API_KEY?: string;
+  /** Anthropic-compatible base URL, e.g. `https://api.anthropic.com`. */
+  UPSTREAM_URL?: string;
   EMBEDDING_MODEL?: string;
   VECTOR_DIMENSIONS?: string;
   RATE_LIMIT_PER_MINUTE?: string;
+  /** Skip injection above this request-body size; the body is forwarded untouched. */
+  MAX_PROXY_BODY_BYTES?: string;
+  /** "0" disables the corresponding injector. */
+  INJECT_MEMORIES?: string;
+  INJECT_SKILLS?: string;
+  /** Hard cap on the injected text, in characters. */
+  INJECTION_BUDGET_CHARS?: string;
 }
 
 export type MemoryLayer = "l0" | "l1" | "l2" | "l3";

@@ -238,6 +238,58 @@ curl -X POST https://<WORKER_URL>/mcp \
 
 ---
 
+# LLM 代理
+
+把客户端的 `ANTHROPIC_BASE_URL` 指向本 Worker，请求经过时自动注入记忆与技能上下文，再原样转发上游。
+
+## 路由
+
+| 方法 | 路径 | 行为 |
+|---|---|---|
+| `POST` | `/v1/messages` | 注入后转发，流式响应原样回传 |
+| `POST` | `/v1/messages/count_tokens` | 透传，不注入 |
+| `GET` | `/v1/models` | 透传 |
+
+## 鉴权
+
+```bash
+curl -X POST https://<WORKER_URL>/v1/messages \
+  -H "Authorization: Bearer $PROXY_TOKEN" \
+  -H "x-api-key: $ANTHROPIC_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"claude-sonnet-4-5","max_tokens":1024,
+       "messages":[{"role":"user","content":"我们定的数据库是什么？"}]}'
+```
+
+- 用 `PROXY_TOKEN`（独立 secret），**不是** `ADMIN_TOKEN`
+- 客户端带 `x-api-key` 就用客户端的；没带则用 Worker 上的 `ANTHROPIC_API_KEY`
+- 客户端的 `authorization` 头会被剥掉，不会透传到上游
+- 未配置 `PROXY_TOKEN` → `503 proxy_not_configured`
+
+## 响应头
+
+| 头 | 说明 |
+|---|---|
+| `x-cfam-injected` | `1` / `0` |
+| `x-cfam-reason` | `injected`、`no_content`、`body_too_large`、`not_injectable`、`injection_failed` |
+| `x-cfam-upstream-ms` | 上游耗时（毫秒） |
+
+## 配置项
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `UPSTREAM_URL` | `https://api.anthropic.com` | 上游地址 |
+| `MAX_PROXY_BODY_BYTES` | `524288` | 超过则跳过注入、原样转发 |
+| `INJECT_MEMORIES` | `1` | `0` 关闭记忆注入 |
+| `INJECT_SKILLS` | `1` | `0` 关闭技能列表注入 |
+| `INJECTION_BUDGET_CHARS` | `4000` | 注入文本硬上限 |
+
+## 注入位置
+
+注入到**最后一条含文字的用户消息**之前，不动 `system`，也不动纯 `tool_result` 轮。插入的是一个 `text` block，以 `<cf-agent-memory>` 开头，便于识别和 grep。
+
+---
+
 # 错误
 
 | 状态码 | body | 含义 |
@@ -248,3 +300,4 @@ curl -X POST https://<WORKER_URL>/mcp \
 | 413 | `file_too_large` | 技能资源文件超过 2MB |
 | 429 | `rate_limited` | 超出每分钟限制，`Retry-After: 60` |
 | 500 | `internal_error` | 未捕获异常，看 `wrangler tail` |
+| 503 | `proxy_not_configured` | 代理路由未设置 `PROXY_TOKEN` |

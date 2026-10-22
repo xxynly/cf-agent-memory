@@ -7,6 +7,7 @@ import { isAuthorized, rateLimit, userIdFrom } from "./auth.js";
 import { UserMemoryDO } from "./do/user-memory.js";
 import { buildMcpServer } from "./mcp.js";
 import { ingest, MAX_INGEST_ITEMS } from "./memory/ingest.js";
+import { handleProxy } from "./proxy/anthropic.js";
 import { recall } from "./memory/recall.js";
 import {
   deleteMemory,
@@ -45,7 +46,7 @@ app.get("/health", (c) =>
   c.json({
     ok: true,
     service: "cf-agent-memory",
-    version: "0.2.0",
+    version: "0.3.0",
     time: new Date().toISOString(),
   }),
 );
@@ -56,6 +57,14 @@ const guard = async (c: Context<{ Bindings: Env }>, next: Next) => {
   }
   await next();
 };
+
+// ── LLM proxy ─────────────────────────────────────────────────────────────
+// Registered *before* the /v1/* guard: the proxy authenticates with its own
+// PROXY_TOKEN and spends real LLM quota, so it must not share the admin token.
+// Clients point ANTHROPIC_BASE_URL at this Worker.
+app.all("/v1/messages", handleProxy);
+app.all("/v1/messages/count_tokens", handleProxy);
+app.all("/v1/models", handleProxy);
 
 app.use("/v1/*", guard);
 app.use("/mcp", guard);

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 — 2026-10-22
+
+LLM 代理注入（方案 A）。
+
+- `POST /v1/messages` 转发到 Anthropic 兼容上游，流式响应原样回传
+- 注入：拿最后一条**含文字**的用户消息当 query，召回 top-5 记忆 + 列出技能，插到该轮之前；不动 `system`，不碰纯 `tool_result` 轮
+- 体量闸门：body 超过 `MAX_PROXY_BODY_BYTES`（默认 512KB）跳过注入原样转发——免费层 10ms CPU/请求，长会话解析就可能超预算
+- 注入文本硬上限 `INJECTION_BUDGET_CHARS`（默认 4000），每条记忆截断到 300 字符
+- 独立 `PROXY_TOKEN` 鉴权；未配置返回 503，其他接口不受影响
+- 客户端 `x-api-key` 优先，否则用 Worker 上的 `ANTHROPIC_API_KEY`；客户端 `authorization` 不透传
+- 可观测头：`x-cfam-injected` / `x-cfam-reason` / `x-cfam-upstream-ms`
+- 降级：注入任何环节失败都原样转发，绝不把请求搞失败
+- 15 个新单元测试（提取/定位/配置/降级），全部 35 个测试通过
+
 ## 0.2.0 — 2026-10-22
 
 技能库（Skills）。

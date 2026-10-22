@@ -34,6 +34,19 @@ export function userIdFrom(request: Request): string {
   return new URL(request.url).searchParams.get("user")?.slice(0, 64) || "personal";
 }
 
+/**
+ * Proxy auth. Deliberately separate from ADMIN_TOKEN: the proxy spends real LLM
+ * quota, and the client's own `x-api-key` must never be accepted as proof of
+ * authorization for our route.
+ */
+export function isProxyAuthorized(request: Request, env: Env): boolean {
+  if (!env.PROXY_TOKEN) return false;
+  const header = request.headers.get("authorization");
+  if (!header?.toLowerCase().startsWith("bearer ")) return false;
+  const token = header.slice(7).trim();
+  return token.length > 0 && safeEqual(token, env.PROXY_TOKEN);
+}
+
 /** Fixed-window rate limit through the per-user Durable Object. Fails open. */
 export async function rateLimit(env: Env, userId: string): Promise<Response | null> {
   try {
