@@ -87,6 +87,19 @@
       .del { color: var(--danger); border: none; background: none; padding: 2px 4px; font-size: 12px; }
       .empty { color: var(--muted); padding: 8px 0; }
       #status { min-height: 18px; font-size: 12px; color: var(--muted); }
+      .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); background: var(--panel); padding: 0 24px; }
+      .tabs button {
+        border: none; background: none; border-bottom: 2px solid transparent;
+        border-radius: 0; padding: 10px 14px; color: var(--muted); font-size: 13px;
+      }
+      .tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+      .skill-name { font-weight: 600; font-size: 13px; }
+      pre {
+        margin: 0; padding: 10px 12px; background: #fafaf8; border: 1px solid var(--line);
+        border-radius: 8px; overflow: auto; max-height: 320px; font-size: 12px; line-height: 1.55;
+        white-space: pre-wrap; word-break: break-word;
+      }
+      .stack { display: grid; gap: 8px; }
     </style>
   </head>
   <body>
@@ -96,7 +109,12 @@
       <span class="sub" id="stats"></span>
     </header>
 
-    <main>
+    <nav class="tabs">
+      <button data-tab="memory" aria-selected="true">记忆</button>
+      <button data-tab="skills" aria-selected="false">技能</button>
+    </nav>
+
+    <main id="view-memory">
       <section class="card">
         <div class="row" style="margin-bottom: 10px">
           <input id="token" type="password" placeholder="ADMIN_TOKEN（仅存本地浏览器）" />
@@ -124,6 +142,35 @@
           <button id="reload">刷新</button>
         </div>
         <div id="list"><div class="empty">加载中…</div></div>
+      </section>
+    </main>
+
+    <main id="view-skills" hidden>
+      <section class="card">
+        <div class="row" style="margin-bottom: 10px">
+          <input id="skillQuery" placeholder="搜索技能，例如：部署 / runbook" />
+          <button class="primary" id="skillSearch">搜索</button>
+          <button id="skillReload">刷新</button>
+        </div>
+        <div id="skillStatus" class="muted"></div>
+      </section>
+
+      <section class="card stack">
+        <strong style="font-size: 13px">导入技能</strong>
+        <div class="row">
+          <input id="skillName" placeholder="名称，如 cf-deploy-runbook" style="flex: 1" />
+          <input id="skillTags" placeholder="标签，逗号分隔" style="flex: 1" />
+        </div>
+        <input id="skillDesc" placeholder="一句话描述（可选）" />
+        <textarea id="skillContent" style="min-height: 180px" placeholder="粘贴 SKILL.md 全文：做什么、何时用、具体步骤。同名再次导入会生成新版本。"></textarea>
+        <div class="row" style="justify-content: flex-end">
+          <button class="primary" id="skillImport">导入</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <strong style="font-size: 13px">技能库</strong>
+        <div id="skillList" style="margin-top: 6px"><div class="empty">加载中…</div></div>
       </section>
     </main>
 
@@ -198,7 +245,8 @@
           const body = await api("/v1/memories?limit=50");
           render(body.memories || []);
           const stats = await api("/v1/stats");
-          $("stats").textContent = `共 ${stats.stats.total} 条`;
+          const skills = stats.stats.skills?.total ?? 0;
+          $("stats").textContent = `记忆 ${stats.stats.total} 条 · 技能 ${skills} 个`;
           status("");
         } catch (error) {
           $("list").innerHTML = `<div class="empty">${esc(error.message)}</div>`;
@@ -253,6 +301,138 @@
       });
 
       $("reload").addEventListener("click", load);
+
+      // ── Skills ──────────────────────────────────────────────────────────
+      function skillStatus(text) {
+        $("skillStatus").textContent = text || "";
+      }
+
+      function renderSkills(items) {
+        const list = $("skillList");
+        if (!items.length) {
+          list.innerHTML = '<div class="empty">技能库是空的。粘贴一份 SKILL.md 导入试试。</div>';
+          return;
+        }
+        list.innerHTML = items
+          .map((item) => {
+            const tags = (item.tags || "").split(",").filter(Boolean)
+              .map((t) => `<span class="tag">${esc(t)}</span>`).join("");
+            const files = (item.manifest || []).length;
+            return `<div class="item" data-name="${esc(item.name)}">
+              <div class="item-head">
+                <div>
+                  <div class="skill-name">${esc(item.name)}</div>
+                  <div class="muted">${esc(item.description || item.excerpt || "")}</div>
+                </div>
+                <div class="row">
+                  <button class="open" data-name="${esc(item.name)}">查看</button>
+                  <button class="del" data-name="${esc(item.name)}">删除</button>
+                </div>
+              </div>
+              <div class="meta">
+                <span class="tag key">v${esc(item.version)}</span>
+                ${tags}
+                ${files ? `<span class="tag">${files} 个文件</span>` : ""}
+                <span class="tag">${esc(new Date(item.updated_at).toLocaleString("zh-CN"))}</span>
+              </div>
+              <div class="detail" hidden></div>
+            </div>`;
+          })
+          .join("");
+
+        list.querySelectorAll(".open").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const row = btn.closest(".item");
+            const box = row.querySelector(".detail");
+            if (!box.hidden) { box.hidden = true; return; }
+            try {
+              const body = await api(`/v1/skills/${encodeURIComponent(btn.dataset.name)}`);
+              box.innerHTML = `<pre>${esc(body.skill.content)}</pre>`;
+              box.hidden = false;
+            } catch (error) {
+              skillStatus(error.message);
+            }
+          });
+        });
+
+        list.querySelectorAll(".del").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            if (!confirm(`删除技能 ${btn.dataset.name}？`)) return;
+            try {
+              await api(`/v1/skills/${encodeURIComponent(btn.dataset.name)}`, { method: "DELETE" });
+              skillStatus("已删除");
+              loadSkills();
+            } catch (error) {
+              skillStatus(error.message);
+            }
+          });
+        });
+      }
+
+      async function loadSkills() {
+        try {
+          const body = await api("/v1/skills?limit=50");
+          renderSkills(body.skills || []);
+          skillStatus("");
+        } catch (error) {
+          $("skillList").innerHTML = `<div class="empty">${esc(error.message)}</div>`;
+        }
+      }
+
+      $("skillImport").addEventListener("click", async () => {
+        const name = $("skillName").value.trim();
+        const content = $("skillContent").value.trim();
+        if (!name || !content) { skillStatus("名称和内容都不能为空"); return; }
+        try {
+          const body = await api("/v1/skills", {
+            method: "POST",
+            body: JSON.stringify({
+              name,
+              content,
+              description: $("skillDesc").value.trim() || undefined,
+              tags: $("skillTags").value.split(",").map((t) => t.trim()).filter(Boolean),
+            }),
+          });
+          $("skillName").value = "";
+          $("skillDesc").value = "";
+          $("skillTags").value = "";
+          $("skillContent").value = "";
+          skillStatus(body.created ? `已导入 ${name} v${body.skill.version}` : `已更新 ${name} → v${body.skill.version}`);
+          loadSkills();
+        } catch (error) {
+          skillStatus(error.message);
+        }
+      });
+
+      $("skillSearch").addEventListener("click", async () => {
+        const query = $("skillQuery").value.trim();
+        if (!query) return loadSkills();
+        try {
+          const body = await api(`/v1/skills?q=${encodeURIComponent(query)}&limit=30`);
+          renderSkills(body.skills || []);
+          skillStatus(`命中 ${body.skills.length} 个技能`);
+        } catch (error) {
+          skillStatus(error.message);
+        }
+      });
+
+      $("skillQuery").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") $("skillSearch").click();
+      });
+
+      $("skillReload").addEventListener("click", loadSkills);
+
+      document.querySelectorAll(".tabs button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".tabs button").forEach((b) =>
+            b.setAttribute("aria-selected", String(b === btn)),
+          );
+          const tab = btn.dataset.tab;
+          $("view-memory").hidden = tab !== "memory";
+          $("view-skills").hidden = tab !== "skills";
+          if (tab === "skills") loadSkills();
+        });
+      });
 
       if (state.token) load();
     </script>

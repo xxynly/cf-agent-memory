@@ -46,3 +46,60 @@ CREATE TABLE IF NOT EXISTS ingest_log (
 
 CREATE INDEX IF NOT EXISTS idx_ingest_user_created
   ON ingest_log (user_id, created_at DESC);
+
+-- ── Skills ────────────────────────────────────────────────────────────────
+-- One row per skill holding the *head* version (the current SKILL.md).
+-- Older versions live in skill_versions so an agent can pin a known-good one.
+-- Resource files (scripts/, references/, …) live in R2 under
+-- `<user_id>/skills/<skill_id>/<path>`; `manifest` caches their listing so the
+-- list endpoint does not need an R2 round-trip per row.
+
+CREATE TABLE IF NOT EXISTS skills (
+  id             TEXT PRIMARY KEY,
+  user_id        TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  description    TEXT NOT NULL DEFAULT '',
+  content        TEXT NOT NULL,
+  content_hash   TEXT NOT NULL,
+  version        INTEGER NOT NULL DEFAULT 1,
+  tags           TEXT NOT NULL DEFAULT '',
+  tokens         TEXT NOT NULL DEFAULT '',
+  status         TEXT NOT NULL DEFAULT 'active',
+  owner_agent_id TEXT,
+  manifest       TEXT NOT NULL DEFAULT '[]',
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_skills_user_name
+  ON skills (user_id, name);
+
+CREATE INDEX IF NOT EXISTS idx_skills_user_updated
+  ON skills (user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS skill_versions (
+  id           TEXT PRIMARY KEY,
+  skill_id     TEXT NOT NULL,
+  version      INTEGER NOT NULL,
+  content      TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  created_at   INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_skill_versions_skill_version
+  ON skill_versions (skill_id, version);
+
+-- Which agent may use which skill. Personal edition: an agent id is just a
+-- label, there is no agent registry to validate against.
+CREATE TABLE IF NOT EXISTS skill_allocations (
+  user_id    TEXT NOT NULL,
+  skill_id   TEXT NOT NULL,
+  agent_id   TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, skill_id, agent_id)
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS skills_fts USING fts5(
+  skill_id UNINDEXED,
+  tokens
+);

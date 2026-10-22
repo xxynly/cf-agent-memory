@@ -36,14 +36,15 @@ Claude Code / Cursor / CodeBuddy / 任何 MCP 客户端
 
 ## 特性
 
-- **MCP 原生**：6 个工具（remember / recall / list / update / forget / stats），Claude Code、Cursor、CodeBuddy 等直接接入
+- **MCP 原生**：12 个工具（记忆 6 + 技能 6），Claude Code、Cursor、CodeBuddy 等直接接入
 - **混合召回**：语义（Vectorize）+ 关键词（FTS5 + 中文 bigram）+ RRF 融合 + 时间加权，任一路失败自动降级
 - **同键覆盖**：`key='project.database'` 写入新值自动 supersede 旧值，不会积累互相矛盾的记忆
+- **技能库**：SKILL.md 托管 + 版本快照 + R2 资源文件 + 按 agent 分配，同名再导入自动升版本
 - **分层字段**：`l0/l1/l2/l3` + `fact/event/instruction/task`，为后续的自动提炼留好结构
 - **REST API**：与 MCP 工具一一对应，方便脚本、Web UI、自定义客户端
-- **自带面板**：单页 Web UI，搜索、新增、删除
+- **自带面板**：单页 Web UI，记忆与技能两个标签页
 - **限流**：每个用户一个 Durable Object 做固定窗口限流，跨边缘强一致
-- **一键部署**：`npm run setup && npm run deploy`，自动创建 D1 / Vectorize / secret
+- **一键部署**：`npm run setup && npm run deploy`，自动创建 D1 / Vectorize / R2 / secret
 
 ## 快速开始
 
@@ -104,6 +105,8 @@ npm run dev     # http://localhost:8787
 
 ## 工具一览
 
+**记忆**
+
 | 工具 | 作用 | 关键参数 |
 |---|---|---|
 | `memory_remember` | 写入一条记忆 | `content`、`key?`、`kind?`、`layer?`、`tags?`、`importance?` |
@@ -112,6 +115,17 @@ npm run dev     # http://localhost:8787
 | `memory_update` | 原地修正 | `id`、`content?`、`tags?`、`importance?` |
 | `memory_forget` | 删除 | `id` |
 | `memory_stats` | 按层/类型统计 | — |
+
+**技能**
+
+| 工具 | 作用 | 关键参数 |
+|---|---|---|
+| `skill_import` | 导入/更新 SKILL.md（同名升版本） | `name`、`content`、`description?`、`tags?` |
+| `skill_list` | 列出技能库 | `limit?`、`offset?`、`tag?`、`agent_id?` |
+| `skill_get` | 取全文，可钉住版本 | `name`、`version?` |
+| `skill_search` | 关键词检索技能 | `query`、`limit?` |
+| `skill_allocate` | 分配给某个 agent | `name`、`agent_id` |
+| `skill_delete` | 删除技能及其文件 | `name` |
 
 REST 接口与之一一对应，见 [docs/api.md](docs/api.md)。
 
@@ -136,6 +150,7 @@ query ──┬─► Workers AI embedding ──► Vectorize top-20 ─┐
 | D1 | 5GB / 10 万行写/天 | 每年几万条记忆 | 富余 |
 | Vectorize | 500 万存储维度 ≈ 4900 条（1024 维） | 个人 1~3 年 | 够用，超了见下 |
 | Workers AI | 1 万 Neurons/天 | embedding 消耗很低 | 富余 |
+| R2 | 10GB / A 类 100 万次写/月 | 技能资源文件 | 富余 |
 | Durable Objects | 10 万请求/天 | 只做限流 | 富余 |
 
 **Vectorize 装不下之后**（约 4900 条）：把 embedding 换成 384 维模型（免费额度约 1.3 万条），或只对 `l2/l3` 建向量、`l1` 只走关键词。取舍见 [docs/architecture.md](docs/architecture.md#向量容量)。

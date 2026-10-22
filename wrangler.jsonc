@@ -21,6 +21,12 @@
   "ai": {
     "binding": "AI"
   },
+  "r2_buckets": [
+    {
+      "binding": "SKILLS",
+      "bucket_name": "cf-agent-memory-skills"
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",

@@ -6,6 +6,8 @@ export interface Env {
   AI: Ai;
   USER_MEMORY: DurableObjectNamespace;
   ASSETS: Fetcher;
+  /** Resource files for skills (scripts, references, templates). */
+  SKILLS: R2Bucket;
 
   /** Bearer token required by every /v1 and /mcp request. Set with `wrangler secret put ADMIN_TOKEN`. */
   ADMIN_TOKEN: string;
@@ -62,4 +64,44 @@ export interface RecallResult {
     fused: number;
     degraded: string[];
   };
+}
+
+/** A resource file that ships with a skill. Bytes live in R2, this is the index. */
+export interface SkillFileEntry {
+  path: string;
+  size: number;
+  contentType: string;
+  updatedAt: number;
+}
+
+export interface SkillRecord {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string;
+  /** Full SKILL.md body. */
+  content: string;
+  content_hash: string;
+  /** Current head version, starting at 1. */
+  version: number;
+  tags: string;
+  tokens: string;
+  status: SkillStatus;
+  /** Agent that owns the skill. Personal edition: a free-form label. */
+  owner_agent_id: string | null;
+  /** JSON-encoded SkillFileEntry[]. */
+  manifest: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export type SkillStatus = "active" | "archived";
+
+export interface NewSkill {
+  name: string;
+  content: string;
+  description?: string;
+  tags?: string[];
+  owner_agent_id?: string | null;
+  status?: SkillStatus;
 }

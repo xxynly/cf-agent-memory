@@ -122,7 +122,76 @@ curl -X POST https://<WORKER_URL>/v1/recall \
 
 ## 统计
 
-`GET /v1/stats` → `{ total, byLayer, byKind }`
+`GET /v1/stats` → `{ total, byLayer, byKind, skills: { total, allocations } }`
+
+---
+
+# 技能
+
+技能 = 一份 SKILL.md（`skills` 表，head 版本）+ 可选资源文件（R2）。`POST /v1/skills` 对同名技能执行**更新**：旧 head 快照进 `skill_versions`，版本号 +1，可回滚。
+
+## 导入 / 更新
+
+```bash
+curl -X POST https://<WORKER_URL>/v1/skills \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"cf-deploy-runbook","description":"部署流程","tags":["deploy"],
+       "content":"# CF Deploy Runbook\n\n## 步骤\n1. npm run typecheck\n2. npm run deploy"}'
+```
+
+→ `{ ok, created, previousVersion, skill }`。`created=false` 表示是更新。
+
+## 列表 / 检索
+
+```bash
+curl "https://<WORKER_URL>/v1/skills?limit=20&tag=deploy" -H "Authorization: Bearer $TOKEN"
+curl "https://<WORKER_URL>/v1/skills?q=部署" -H "Authorization: Bearer $TOKEN"        # 关键词
+curl "https://<WORKER_URL>/v1/skills?agent=claude-code" -H "Authorization: Bearer $TOKEN"
+```
+
+列表响应不含 SKILL.md 全文（只有 `contentChars` 与 200 字 `excerpt`），全文走 `GET /v1/skills/:name`。
+
+`:name` 可以是技能名，也可以是 `skl_` 开头的 id。
+
+## 详情 / 修改 / 删除
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/v1/skills/:name` | 全文 + `manifest` + `allocations` |
+| `PATCH` | `/v1/skills/:name` | 改 `description` / `tags` / `status` / `owner_agent_id`（改内容请重新导入） |
+| `DELETE` | `/v1/skills/:name` | 删除技能、版本、分配与 R2 文件 |
+| `GET` | `/v1/skills/:name/versions` | 版本历史（head + 快照） |
+| `GET` | `/v1/skills/:name/versions/:version` | 取某一版本原文 |
+
+## 资源文件（R2）
+
+```bash
+# 上传
+curl -X PUT "https://<WORKER_URL>/v1/skills/cf-deploy-runbook/files/scripts/deploy.sh" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: text/x-shellscript" \
+  --data-binary '#!/bin/bash
+npm run deploy'
+
+# 读取 / 列表 / 删除
+curl "https://<WORKER_URL>/v1/skills/cf-deploy-runbook/files/scripts/deploy.sh" -H "Authorization: Bearer $TOKEN"
+curl "https://<WORKER_URL>/v1/skills/cf-deploy-runbook/files" -H "Authorization: Bearer $TOKEN"
+curl -X DELETE "https://<WORKER_URL>/v1/skills/cf-deploy-runbook/files/scripts/deploy.sh" -H "Authorization: Bearer $TOKEN"
+```
+
+路径必须相对，拒绝 `..`；单文件上限 **2MB**。文件改动后 `manifest` 自动刷新。
+
+## 分配
+
+```bash
+curl -X POST https://<WORKER_URL>/v1/skills/cf-deploy-runbook/allocate \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"agent_id":"claude-code"}'
+
+curl -X DELETE https://<WORKER_URL>/v1/skills/cf-deploy-runbook/allocate/claude-code \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+个人版没有 agent 注册表，`agent_id` 只是标签，用于 `skill_list?agent=` 过滤。
 
 ---
 
@@ -150,6 +219,12 @@ curl -X POST https://<WORKER_URL>/mcp \
 | `memory_update` | `id`、`content?`、`tags?`、`importance?` |
 | `memory_forget` | `id` |
 | `memory_stats` | — |
+| `skill_import` | `name`、`content`、`description?`、`tags?` |
+| `skill_list` | `limit?`、`offset?`、`tag?`、`agent_id?` |
+| `skill_get` | `name`、`version?` |
+| `skill_search` | `query`、`limit?` |
+| `skill_allocate` | `name`、`agent_id` |
+| `skill_delete` | `name` |
 
 调用示例：
 
@@ -170,5 +245,6 @@ curl -X POST https://<WORKER_URL>/mcp \
 | 400 | `invalid_body` + `details` | 参数校验失败 |
 | 401 | `unauthorized` | token 缺失或不匹配 |
 | 404 | `not_found` | id 不存在 |
+| 413 | `file_too_large` | 技能资源文件超过 2MB |
 | 429 | `rate_limited` | 超出每分钟限制，`Retry-After: 60` |
 | 500 | `internal_error` | 未捕获异常，看 `wrangler tail` |

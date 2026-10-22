@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB_NAME = "cf-agent-memory";
 const INDEX_NAME = "cf-agent-memory";
+const BUCKET_NAME = "cf-agent-memory-skills";
 const DIMENSIONS = "1024";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
@@ -109,6 +110,18 @@ if (!schema.ok) {
   process.exit(1);
 }
 console.log(green("  表结构已就绪"));
+
+step(`创建 R2 桶 ${BUCKET_NAME}（技能资源文件，已存在则复用）`);
+const bucket = tryRun(["r2", "bucket", "create", BUCKET_NAME]);
+if (bucket.ok) {
+  console.log(green("  已创建"));
+} else if (/already exists|already owned|duplicate/i.test(bucket.out)) {
+  console.log(dim("  已存在，跳过"));
+} else {
+  console.log(yellow("  创建失败，稍后请手动执行："));
+  console.log(dim(`  npx wrangler r2 bucket create ${BUCKET_NAME}`));
+  console.log(dim(bucket.out.slice(-400)));
+}
 
 step("配置 ADMIN_TOKEN");
 const devVarsPath = join(root, ".dev.vars");

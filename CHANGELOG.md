@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 — 2026-10-22
+
+技能库（Skills）。
+
+- 6 个 MCP 工具：`skill_import` / `skill_list` / `skill_get` / `skill_search` / `skill_allocate` / `skill_delete`
+- REST：`/v1/skills` CRUD、`/v1/skills/:name/files/*`、`/v1/skills/:name/versions`、`/v1/skills/:name/allocate`
+- 版本模型：同名再导入 → 旧 head 快照进 `skill_versions`，版本号 +1，可回滚
+- 资源文件存 R2（`<user>/skills/<id>/<path>`），`manifest` 自动刷新；单文件上限 2MB
+- 关键词检索走 D1 FTS5，与记忆召回共用同一分词函数
+- `npm run setup` 增加 R2 桶创建；一键部署按钮可自动分配 R2
+- Web UI 新增「技能」标签页：导入、搜索、查看全文、删除
+
 ## 0.1.0 — 2026-10-22
 
 首个可用版本。

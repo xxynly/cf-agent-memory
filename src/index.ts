@@ -17,7 +17,25 @@ import {
   updateMemory,
 } from "./memory/store.js";
 import { deleteVector, embed, upsertVector } from "./memory/vector.js";
-import type { Env } from "./types.js";
+import {
+  allocateSkill,
+  deleteSkill,
+  deleteSkillFile,
+  getSkill,
+  getSkillFile,
+  getVersion,
+  importSkill,
+  listAllocations,
+  listSkillFiles,
+  listSkills,
+  listVersions,
+  putSkillFile,
+  searchSkills,
+  skillStats,
+  unallocateSkill,
+  updateSkill,
+} from "./skills/store.js";
+import type { Env, SkillRecord } from "./types.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -27,7 +45,7 @@ app.get("/health", (c) =>
   c.json({
     ok: true,
     service: "cf-agent-memory",
-    version: "0.1.0",
+    version: "0.2.0",
     time: new Date().toISOString(),
   }),
 );
@@ -160,8 +178,203 @@ app.post("/v1/ingest", async (c) => {
 });
 
 app.get("/v1/stats", async (c) => {
-  return c.json({ ok: true, stats: await stats(c.env, userIdFrom(c.req.raw)) });
+  const userId = userIdFrom(c.req.raw);
+  const [memories, skills] = await Promise.all([stats(c.env, userId), skillStats(c.env, userId)]);
+  return c.json({ ok: true, stats: { ...memories, skills } });
 });
+
+// ── Skills ────────────────────────────────────────────────────────────────
+// Specific paths must be registered before `/:name` or Hono matches the
+// parameterised route first.
+
+const skillInput = z.object({
+  name: z.string().min(1).max(120),
+  content: z.string().min(1).max(200_000),
+  description: z.string().max(2_000).optional(),
+  tags: z.array(z.string().max(64)).max(20).optional(),
+  owner_agent_id: z.string().max(64).optional().nullable(),
+  status: z.enum(["active", "archived"]).optional(),
+});
+
+app.get("/v1/skills", async (c) => {
+  const userId = userIdFrom(c.req.raw);
+  const query = c.req.query("q")?.trim();
+
+  if (query) {
+    const rows = await searchSkills(c.env, userId, query, Number(c.req.query("limit") ?? 20));
+    return c.json({ ok: true, count: rows.length, skills: rows.map(summarizeSkill) });
+  }
+
+  const rows = await listSkills(c.env, userId, {
+    limit: Number(c.req.query("limit") ?? 20),
+    offset: Number(c.req.query("offset") ?? 0),
+    tag: c.req.query("tag") ?? undefined,
+    status: (c.req.query("status") as "active" | "archived" | undefined) ?? undefined,
+    agentId: c.req.query("agent") ?? undefined,
+  });
+  return c.json({ ok: true, count: rows.length, skills: rows.map(summarizeSkill) });
+});
+
+app.post("/v1/skills", async (c) => {
+  const limited = await rateLimit(c.env, userIdFrom(c.req.raw));
+  if (limited) return limited;
+
+  const parsed = skillInput.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "invalid_body", details: parsed.error.issues }, 400);
+
+  const userId = userIdFrom(c.req.raw);
+  const result = await importSkill(c.env, userId, parsed.data);
+  return c.json({ ok: true, ...result, skill: summarizeSkill(result.skill) }, result.created ? 201 : 200);
+});
+
+app.get("/v1/skills/:name/files", async (c) => {
+  const files = await listSkillFiles(c.env, userIdFrom(c.req.raw), c.req.param("name"));
+  if (!files) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true, count: files.length, files });
+});
+
+app.put("/v1/skills/:name/files/:path{.+}", async (c) => {
+  const limited = await rateLimit(c.env, userIdFrom(c.req.raw));
+  if (limited) return limited;
+
+  const body = await c.req.arrayBuffer();
+  if (body.byteLength > 2_000_000) return c.json({ error: "file_too_large", maxBytes: 2_000_000 }, 413);
+
+  const written = await putSkillFile(
+    c.env,
+    userIdFrom(c.req.raw),
+    c.req.param("name"),
+    c.req.param("path"),
+    body,
+    c.req.header("content-type") ?? "text/plain; charset=utf-8",
+  );
+  if (!written) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true, ...written }, 201);
+});
+
+app.get("/v1/skills/:name/files/:path{.+}", async (c) => {
+  const object = await getSkillFile(
+    c.env,
+    userIdFrom(c.req.raw),
+    c.req.param("name"),
+    c.req.param("path"),
+  );
+  if (!object) return c.json({ error: "not_found" }, 404);
+  return new Response(object.body, {
+    headers: {
+      "content-type": object.httpMetadata?.contentType ?? "application/octet-stream",
+      etag: object.httpEtag,
+    },
+  });
+});
+
+app.delete("/v1/skills/:name/files/:path{.+}", async (c) => {
+  const limited = await rateLimit(c.env, userIdFrom(c.req.raw));
+  if (limited) return limited;
+
+  const deleted = await deleteSkillFile(
+    c.env,
+    userIdFrom(c.req.raw),
+    c.req.param("name"),
+    c.req.param("path"),
+  );
+  if (!deleted) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
+});
+
+app.get("/v1/skills/:name/versions", async (c) => {
+  const result = await listVersions(c.env, userIdFrom(c.req.raw), c.req.param("name"));
+  if (!result) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true, ...result });
+});
+
+app.get("/v1/skills/:name/versions/:version", async (c) => {
+  const version = Number(c.req.param("version"));
+  if (!Number.isInteger(version)) return c.json({ error: "invalid_version" }, 400);
+
+  const result = await getVersion(c.env, userIdFrom(c.req.raw), c.req.param("name"), version);
+  if (!result) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true, ...result });
+});
+
+app.post("/v1/skills/:name/allocate", async (c) => {
+  const limited = await rateLimit(c.env, userIdFrom(c.req.raw));
+  if (limited) return limited;
+
+  const parsed = z
+    .object({ agent_id: z.string().min(1).max(64) })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "invalid_body", details: parsed.error.issues }, 400);
+
+  const skill = await allocateSkill(
+    c.env,
+    userIdFrom(c.req.raw),
+    c.req.param("name"),
+    parsed.data.agent_id,
+  );
+  if (!skill) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true, skill: summarizeSkill(skill), agent_id: parsed.data.agent_id });
+});
+
+app.delete("/v1/skills/:name/allocate/:agentId", async (c) => {
+  const limited = await rateLimit(c.env, userIdFrom(c.req.raw));
+  if (limited) return limited;
+
+  const removed = await unallocateSkill(
+    c.env,
+    userIdFrom(c.req.raw),
+    c.req.param("name"),
+    c.req.param("agentId"),
+  );
+  if (!removed) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
+});
+
+app.get("/v1/skills/:name", async (c) => {
+  const skill = await getSkill(c.env, userIdFrom(c.req.raw), c.req.param("name"));
+  if (!skill) return c.json({ error: "not_found" }, 404);
+  const allocations = await listAllocations(c.env, userIdFrom(c.req.raw), skill.id);
+  return c.json({ ok: true, skill: { ...skill, manifest: JSON.parse(skill.manifest || "[]") }, allocations });
+});
+
+app.patch("/v1/skills/:name", async (c) => {
+  const limited = await rateLimit(c.env, userIdFrom(c.req.raw));
+  if (limited) return limited;
+
+  const patch = z
+    .object({
+      description: z.string().max(2_000).optional(),
+      tags: z.array(z.string().max(64)).max(20).optional(),
+      status: z.enum(["active", "archived"]).optional(),
+      owner_agent_id: z.string().max(64).nullable().optional(),
+    })
+    .safeParse(await c.req.json().catch(() => null));
+  if (!patch.success) return c.json({ error: "invalid_body", details: patch.error.issues }, 400);
+
+  const updated = await updateSkill(c.env, userIdFrom(c.req.raw), c.req.param("name"), patch.data);
+  if (!updated) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true, skill: summarizeSkill(updated) });
+});
+
+app.delete("/v1/skills/:name", async (c) => {
+  const limited = await rateLimit(c.env, userIdFrom(c.req.raw));
+  if (limited) return limited;
+
+  const deleted = await deleteSkill(c.env, userIdFrom(c.req.raw), c.req.param("name"));
+  if (!deleted) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
+});
+
+/** List responses drop the full SKILL.md body — callers fetch it by name. */
+function summarizeSkill(skill: SkillRecord) {
+  const { content, tokens, ...rest } = skill;
+  return {
+    ...rest,
+    manifest: JSON.parse(skill.manifest || "[]"),
+    contentChars: content.length,
+    excerpt: content.slice(0, 200),
+  };
+}
 
 /** Stateless MCP over Streamable HTTP — no session state, every call is independent. */
 app.all("/mcp", async (c) => {
