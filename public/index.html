@@ -200,6 +200,18 @@
         return String(value ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
       }
 
+      /**
+       * Tags arrive as a comma-joined string from D1 (`infra,decision`) but as a
+       * real array from some code paths. Accept both so rendering never explodes.
+       */
+      function toTags(value) {
+        if (Array.isArray(value)) return value.filter(Boolean);
+        if (typeof value === "string") {
+          return value.split(",").map((t) => t.trim()).filter(Boolean);
+        }
+        return [];
+      }
+
       function render(items) {
         const list = $("list");
         if (!items.length) {
@@ -208,7 +220,7 @@
         }
         list.innerHTML = items
           .map((item) => {
-            const tags = (item.tags || []).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
+            const tags = toTags(item.tags).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
             const key = item.key ? `<span class="tag key">${esc(item.key)}</span>` : "";
             const via = (item.via || []).map((v) => `<span class="tag">${esc(v)}</span>`).join("");
             const date = new Date(item.createdAt || item.created_at).toLocaleString("zh-CN");
@@ -315,7 +327,7 @@
         }
         list.innerHTML = items
           .map((item) => {
-            const tags = (item.tags || "").split(",").filter(Boolean)
+            const tags = toTags(item.tags)
               .map((t) => `<span class="tag">${esc(t)}</span>`).join("");
             const files = (item.manifest || []).length;
             return `<div class="item" data-name="${esc(item.name)}">
